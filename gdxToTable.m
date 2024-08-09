@@ -25,18 +25,14 @@ function [pGen,pReg,obj,timeDiv] = gdxToTable(gdxFilename,vppPars,globalPars)
         j=j+1;
     end
 
-    g3  = powerDispatch(:,1); % Flexible demand
-    g6  = powerDispatch(:,2); % PV
-    g5  = powerDispatch(:,3); % STU
-    g2  = powerDispatch(:,5); % WPP
+    g1  = powerDispatch(:,5); % WPP1 
+    g2  = powerDispatch(:,3); % WPP2
 
-    g3Reg  = powerReg(:,1);   % Flexible demand
-    g6Reg  = powerReg(:,2);   % PV
-    g5Reg  = powerReg(:,3);   % STU
-    g2Reg  = powerReg(:,5);   % WPP
-
-    pGen = {g2,g3,g5,g6};
-    pReg = {g2Reg,g3Reg,g5Reg,g6Reg};
+    g1Reg  = powerReg(:,5);   % WPP1
+    g2Reg  = powerReg(:,3);   % WPP2
+    
+    pGen = {g1,g2};
+    pReg = {g1Reg,g2Reg};
         
     obj = objValue.val;
 

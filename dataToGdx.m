@@ -1,5 +1,5 @@
 
-function [gP, vppP] = dataToGdx(tsoComm,hStart,tStart,pGenRT,pReal,filename)
+function [gP, vppP] = dataToGdx(tsoComm,hStart,tStart,pGenRT,filename)
 %% 
 % Import necessary packages
 
@@ -11,7 +11,7 @@ function [gP, vppP] = dataToGdx(tsoComm,hStart,tStart,pGenRT,pReal,filename)
     [busP, branchP, dispatchP, gP, tradeP, vppP] = readexcel(filename);
 
     % Prepare data
-    [busPar, branchPar, dispatchPar, globalPar, gPar, realTimePar, tradePar, vppPar] = ...
+    [busPar, branchPar, dispatchPar, expectedPar, globalPar, gPar, prevDelPar, realTimePar, tradePar, vppPar] = ...
                         prepare_data(busP, branchP, dispatchP, gP, hStart, pGenRT, tradeP, tStart, vppP);
 
     
@@ -39,15 +39,7 @@ function [gP, vppP] = dataToGdx(tsoComm,hStart,tStart,pGenRT,pReal,filename)
     tsoCommand = Parameter(m, 'sTsoCommand', 'description', 'TSO command for set point changes');
     tsoCommand.setRecords(tsoComm);
 
-    realDel = Parameter(m, 'pRealDel', 'description', 'Real-time delivery');
-    realDel.setRecords(pReal);
-
-    firstOrderLevel = 0.6;
-    firstOrderMul = Parameter(m, 'sFirstOrderMul', 'description', ...
-        'Multiplier to check if unit response is beyond expected level');
-    firstOrderMul.setRecords(firstOrderLevel);
-    
-    
+   
     % add sets
     
     b = Set(m, 'b', 'records', {unique(busP.ID)},       'description', 'Buses');
@@ -86,6 +78,16 @@ function [gP, vppP] = dataToGdx(tsoComm,hStart,tStart,pGenRT,pReal,filename)
     pRealTimeData = Parameter(m, 'pRealTimeData', {'*','*','*'}, 'description', ...
         'Real-Time delivery parameters', 'domain_forwarding', true);
     pRealTimeData.setRecords(realTimePar);
+
+    % Delivery at time t-1
+    pPrevDel = Parameter(m, 'pPrevDel', {'*','*','*'}, 'description', ...
+        'Previous-time delivery', 'domain_forwarding', true);
+    pPrevDel.setRecords(prevDelPar);
+
+    % Delivery with regulation
+    pExpectedDel = Parameter(m, 'pExpectedDel', {'*','*','*'}, 'description', ...
+        'Expected delivery', 'domain_forwarding', true);
+    pExpectedDel.setRecords(expectedPar);
     
     % Global parameters
     pGlobal = Parameter(m, 'pGlobal', {'*'}, 'description', 'Global parameters', ...
@@ -119,32 +121,66 @@ function [busP, branchP, dispatchP, gP, tradeP, vppP] = readexcel(filename)
     opts  = detectImportOptions(filename); % Initial detection  
 
     opts.VariableNamesRange = 'A15';
-    opts.DataRange          = 'A16';    
+    opts.DataRange          = 'A16';
 
-    % Read data
-    
+    busVarNames = ["ID","BusType","BusName","BaseKV","Code",...
+        "NormalVmax","NormalVmin","EmergencyVmax","EmergencyVmin"];
+    [~,x1] = size(busVarNames);
+
+    branchVarNames = ["FromBusNumber","ToBusNumber","LineR",...
+        "LineX","ChargingB","InService","Rate1","Rate2","Rate3"];
+    [~,x2] = size(branchVarNames);
+
+    dispVarNames = ["ID","Period","Commitment","Pgen","StartUp",...
+        "ShutDown","RegMaxUp","RegMaxDown","RegMaxUpV2",...
+        "RegMaxDownV2","PAvailable","QLoad"];
+    [~,x3] = size(dispVarNames);
+
+    gVarNames = ["Period","SubPeriod","firstOrderLevel","multiplyLevel",...
+        "PenaltyCost","TsoCommand","SolverSelect","EmCost","PmCost",...
+        "ImCost","IpfcMode","Gamma","EssLbFinal","Lambda","PowerBase"];
+    [~,x4] = size(gVarNames);
+
+    tradeVarNames = ["ID","Period","TradedPower","UpSrOffer",...
+        "DownSrOffer","PAvailable","QLoad"];
+    [~,x5] = size(tradeVarNames);
+
+    vppVarNames = ["ID","BusNumber","Pmax","Pmin","Qmax","Qmin",...
+        "RampUp","RampStartup","RampDown","RampShutdown","Gen0Commit",...
+        "Gen0","RegUpCost","RegDownCost","DamCost","EtMin","DeltaFss",...
+        "Inertia","EssChCap","EssDisCap","EssChEff","EssDisEff","UnitType"];
+    [~,x6] = size(vppVarNames);
+
+    % Read data    
     busP       = readtable(filename, opts, 'Sheet', 'Buses');
-    busP       = busP(:,1:9);
+    busP       = busP(:,1:x1);
+    busP.Properties.VariableNames = busVarNames;
 
     branchP    = readtable(filename, opts, 'Sheet', 'Branches_Lines');
-    branchP    = branchP(:,1:9);
+    branchP    = branchP(:,1:x2);
+    branchP.Properties.VariableNames = branchVarNames;
 
     dispatchP  = readtable(filename, opts, 'Sheet', 'Dispatches');
-    dispatchP  = dispatchP(:,1:12);
+    dispatchP  = dispatchP(:,1:x3);
+    dispatchP.Properties.VariableNames = dispVarNames;
 
     gP         = readtable(filename, opts, 'Sheet', 'Global_params'); 
-    gP         = gP(:,1:15);
+    gP         = gP(1,1:x4);
+    gP.Properties.VariableNames = gVarNames;
 
     tradeP     = readtable(filename, opts, 'Sheet', 'Bus_trade');
-    tradeP     = tradeP(:,1:7);
-    
+    tradeP     = tradeP(:,1:x5);
+    tradeP.Properties.VariableNames = tradeVarNames;
+
     vppP       = readtable(filename, opts, 'Sheet', 'VPP_Units');
+    vppP       = vppP(:,1:x6);
+    vppP.Properties.VariableNames = vppVarNames;
 
 end
 %% 
 
 
-function [busPar, branchPar, dispatchPar, globalPar, gPar, realTimePar, tradePar, vppPar] = ...
+function [busPar, branchPar, dispatchPar, expectedPar, globalPar, gPar, prevDelPar, realTimePar, tradePar, vppPar] = ...
                         prepare_data(busP, branchP, dispatchP, gP, hStart, pGenRT, tradeP, tStart, vppP)
 
     % Global Parameters
@@ -158,7 +194,7 @@ function [busPar, branchPar, dispatchPar, globalPar, gPar, realTimePar, tradePar
 
     gPar1   = table2array(globalPar(:,1));
     gPar2   = table2array(globalPar(:,2));
-    gPar3   = double(string(gPar2));
+    gPar3   = str2double(string(gPar2));
     gPar    = table(gPar1,gPar3);
     gPar.Properties.VariableNames(1) = "uni_1";
     gPar.Properties.VariableNames(2) = "value";
@@ -233,11 +269,55 @@ function [busPar, branchPar, dispatchPar, globalPar, gPar, realTimePar, tradePar
     realTimePar.Properties.VariableNames(3) = "uni_3";
     realTimePar.Properties.VariableNames(4) = "value";
     
+    prevDelPar = realTimePar;
+    
+    expectedPar = realTimePar;
+
+
+%     % Previous deliveries
+%     firstCol  = [];
+%     secondCol = [];
+%     thirdCol  = [];
+%     fourthCol = [];
+%     
+%     for i = 1:a
+%         firstCol   = [firstCol;  iD(i)];
+%         secondCol  = [secondCol; categorical(hStart)];
+%         thirdCol   = [thirdCol;  categorical(tStart)];
+%         fourthCol  = [fourthCol; pPrev(i+1)/megaWatt];        
+%     end
+%     
+%     prevDelPar = table(firstCol, secondCol, thirdCol, double(string(fourthCol)));
+%     prevDelPar.Properties.VariableNames(1) = "uni_1";
+%     prevDelPar.Properties.VariableNames(2) = "uni_2";
+%     prevDelPar.Properties.VariableNames(3) = "uni_3";
+%     prevDelPar.Properties.VariableNames(4) = "value";
+% 
+%     % Expected deliveries
+%     firstCol  = [];
+%     secondCol = [];
+%     thirdCol  = [];
+%     fourthCol = [];
+%     
+%     for i = 1:a
+%         firstCol   = [firstCol;  iD(i)];
+%         secondCol  = [secondCol; categorical(hStart)];
+%         thirdCol   = [thirdCol;  categorical(tStart)];
+%         fourthCol  = [fourthCol; pExpected(i+1)/megaWatt];        
+%     end
+%     
+%     expectedPar = table(firstCol, secondCol, thirdCol, double(string(fourthCol)));
+%     expectedPar.Properties.VariableNames(1) = "uni_1";
+%     expectedPar.Properties.VariableNames(2) = "uni_2";
+%     expectedPar.Properties.VariableNames(3) = "uni_3";
+%     expectedPar.Properties.VariableNames(4) = "value";
+    
 end
 %% 
 
 
 function tab = makeGdxTable3Cols(fullTable)
+
     iD       = categorical(fullTable.ID);
     varNames = categorical(fullTable.Properties.VariableNames);
     varNames = varNames(:,2:end);
